@@ -2,9 +2,6 @@
 
 A production-grade, end-to-end cloud data pipeline and conversational AI assistant built on Google Cloud Platform (GCP), Dataform, BigQuery, and Google Agent Development Kit (ADK) powered by Gemini.
 
-> [!NOTE]
-> **Zero-Credential / Mock Execution Support**: Where live GCP services or credentials are not configured, the entire repository automatically supports end-to-end execution through built-in mock implementations. You can run all ingestion scripts, test suites, and agent tools locally without active GCP credentials by setting `USE_MOCK=true`.
-
 ---
 
 ## 🌟 Overview
@@ -12,7 +9,7 @@ A production-grade, end-to-end cloud data pipeline and conversational AI assista
 The **NorthStar Retail** platform provides business stakeholders and store managers with instant, grounded answers to business intelligence and store policy inquiries.
 
 The solution integrates:
-1. **Cloud Storage Ingestion**: Automated ingestion of structured sales data and unstructured product/policy documents into Google Cloud Storage (GCS) with local fallback.
+1. **Cloud Storage Ingestion**: Automated ingestion of structured sales data and unstructured product/policy documents into Google Cloud Storage (GCS).
 2. **Medallion Data Lakehouse (BigQuery & Dataform)**:
    - **Bronze Layer**: Raw transactional sales tables loaded directly from GCS (`bronze.sales_raw`).
    - **Silver Layer**: Cleaned, deduplicated, and validated data with data quality filters (`silver.sales_enriched`).
@@ -22,7 +19,8 @@ The solution integrates:
    - Grounded tool execution preventing LLM hallucinations.
    - Sales analytics tools querying the authoritative Gold layer.
    - Document search tools providing policy answers (returns, shipping, warranties, loyalty programs).
-4. **Mock Execution Engine**: Built-in mock drivers for all GCP ingestion, querying, and document retrieval tasks enabling full evaluation offline.
+4. **Isolated Mock & Offline Evaluation Suite**:
+   - A dedicated `mock/` package and automated unit tests (`tests/test_mock_pipeline.py`) supporting full end-to-end execution without active GCP credentials.
 
 ---
 
@@ -35,11 +33,11 @@ flowchart TD
         DOCS["Product & Policy Docs (PDF, JSON, CSV, TXT)"]
     end
 
-    subgraph GCPStorage["Google Cloud Storage (GCS) / Mock Storage"]
+    subgraph GCPStorage["Google Cloud Storage (GCS)"]
         GCS_RAW["gs://bucket/raw/"]
     end
 
-    subgraph BigQueryWarehouse["BigQuery Medallion Lakehouse / Mock Data Layer"]
+    subgraph BigQueryWarehouse["BigQuery Medallion Lakehouse"]
         subgraph BronzeLayer["Bronze Layer"]
             BRONZE_SALES["bronze.sales_raw"]
         end
@@ -59,7 +57,7 @@ flowchart TD
     subgraph ADKAgent["NorthStar Retail AI Agent (Google ADK)"]
         AGENT["northstar_retail_agent (Gemini)"]
         
-        subgraph Tools["Agent Tools (Live BQ + Mock Fallback)"]
+        subgraph Tools["Agent Tools"]
             TOOL_TOP["get_top_products"]
             TOOL_REG["get_revenue_by_region"]
             TOOL_CAT["get_recent_best_category"]
@@ -100,13 +98,13 @@ flowchart TD
 ├── README.md                                  # Complete project documentation and setup guide
 ├── agent/                                     # Google ADK Conversational Agent
 │   ├── __init__.py
-│   ├── config.py                              # Agent configuration, table mappings, and mock flags
+│   ├── config.py                              # Agent configuration and table mappings
 │   ├── agent.py                               # Root agent definition and prompt instructions
 │   └── tools/
 │       ├── __init__.py
 │       ├── agent.py                           # Tools module root agent reference
-│       ├── sales_tools.py                     # BigQuery Gold analytical query tools (with Mock fallback)
-│       └── policy_tools.py                    # BigQuery policy document search tools (with Mock fallback)
+│       ├── sales_tools.py                     # BigQuery Gold analytical query tools
+│       └── policy_tools.py                    # BigQuery policy document search tools
 ├── data/                                      # Local source dataset (sales and policies)
 │   ├── sales.csv                              # Historical sales transactions
 │   └── product_docs/                          # Unstructured policy documents
@@ -129,14 +127,19 @@ flowchart TD
 │           ├── fact_sales.sqlx                # Star schema sales fact table
 │           ├── dim_product.sqlx               # Product dimension table
 │           └── dim_date.sqlx                  # Date dimension table
+├── mock/                                      # Isolated Mock Suite (Zero-Credential Execution)
+│   ├── __init__.py
+│   ├── mock_sales_tools.py                    # Standalone mock sales analytical query tools
+│   ├── mock_policy_tools.py                   # Standalone mock policy document search tools
+│   └── mock_ingestion.py                      # Standalone mock ingestion simulator
 ├── src/
-│   └── ingestion/                             # Data ingestion & GCP initialization scripts
-│       ├── setup_gcp.py                       # GCS bucket provisioning (live + mock)
-│       ├── upload_to_gcs.py                   # Local-to-GCS upload pipeline (live + mock)
-│       ├── load_sales_to_bigquery.py          # Bronze sales BigQuery loader (live + mock)
-│       └── load_product_docs_to_bigquery.py   # Multi-format document parser & loader (live + mock)
+│   └── ingestion/                             # Production data ingestion & GCP initialization scripts
+│       ├── setup_gcp.py                       # GCS bucket provisioning
+│       ├── upload_to_gcs.py                   # Local-to-GCS upload pipeline
+│       ├── load_sales_to_bigquery.py          # Bronze sales BigQuery loader
+│       └── load_product_docs_to_bigquery.py   # Multi-format document parser & loader
 └── tests/
-    └── test_mock_pipeline.py                  # Automated test suite for zero-credential mock execution
+    └── test_mock_pipeline.py                  # Automated offline unit test suite
 ```
 
 ---
@@ -144,12 +147,13 @@ flowchart TD
 ## ⚙️ Prerequisites
 
 - **Python**: Version `3.11` or higher.
-- **Google Cloud Platform (GCP)** Account (Optional if running in Mock Mode).
-- **GCP APIs Enabled** (for live mode):
+- **Google Cloud Platform (GCP)** Account with billing enabled.
+- **GCP APIs Enabled**:
   - BigQuery API (`bigquery.googleapis.com`)
   - Cloud Storage API (`storage.googleapis.com`)
   - Dataform API (`dataform.googleapis.com`)
-- **Gemini API Key**: Obtainable from [Google AI Studio](https://aistudio.google.com/app/apikey) for conversational agent execution.
+- **Google Cloud SDK (`gcloud` CLI)** installed and configured.
+- **Gemini API Key**: Obtainable from [Google AI Studio](https://aistudio.google.com/app/apikey).
 
 ---
 
@@ -194,7 +198,7 @@ pip install -r requirements.txt
    ```bash
    cp .env.example .env
    ```
-2. Open `.env` and configure your settings:
+2. Open `.env` and fill in your GCP Project ID, GCS Bucket Name, and Gemini API Key:
    ```env
    # Google Cloud Platform Configuration
    GCP_PROJECT_ID=your-gcp-project-id
@@ -212,16 +216,13 @@ pip install -r requirements.txt
    DIM_DATE_TABLE=dim_date
    DOCUMENT_TABLE=product_documents
 
-   # Mock Mode (Set to "true" to run without active GCP credentials)
-   USE_MOCK=false
-
    # Gemini API Key (from Google AI Studio)
    GEMINI_API_KEY=your-gemini-api-key
    ```
 
 ---
 
-### Step 5: Authenticate with Google Cloud (Skip if running in Mock Mode)
+### Step 5: Authenticate with Google Cloud
 
 Authenticate your local environment using Application Default Credentials (ADC):
 
@@ -238,13 +239,12 @@ gcloud config set project your-gcp-project-id
    ```bash
    python src/ingestion/setup_gcp.py
    ```
-   *(In Mock Mode or when credentials are absent, simulates bucket provisioning without error).*
 
 2. **Upload Raw Sales CSV and Product Documents to GCS**:
    ```bash
    python src/ingestion/upload_to_gcs.py
    ```
-   *(Uploads `data/sales.csv` and `data/product_docs/*` to `gs://<bucket>/raw/` preserving hierarchy).*
+   *This uploads `data/sales.csv` and `data/product_docs/*` to `gs://<your-bucket>/raw/` preserving directory hierarchy.*
 
 ---
 
@@ -259,16 +259,16 @@ gcloud config set project your-gcp-project-id
    ```bash
    python src/ingestion/load_product_docs_to_bigquery.py
    ```
-   *(Parses PDFs via `pypdf`, JSON files, TXT files, and CSV FAQs and indexes them into the Gold dataset).*
+   *This script automatically parses PDFs (via `pypdf`), JSON files, TXT files, and CSV FAQs and indexes them into the Gold dataset.*
 
 ---
 
 ### Step 8: Execute Dataform Transformations (Silver & Gold Layers)
 
-Transform raw Bronze data into clean Silver and Gold dimensional models.
+Execute the Dataform pipeline to transform raw data into the Silver and Gold dimensional models.
 
 #### Option A: Running via Google Cloud Console
-1. Navigate to **Dataform** in Google Cloud Console.
+1. Navigate to **Dataform** in the Google Cloud Console.
 2. Open your repository workspace.
 3. Click **Start Execution** > **All Actions** (or select tags `silver` and `gold`).
 
@@ -297,13 +297,19 @@ Select the **`northstar_retail_agent`** from the agent dropdown.
 
 ---
 
-### Step 10: Run Automated Offline / Mock Tests
+### Step 10: Zero-Credential Mock & Offline Verification
 
-You can verify that all data tools, category aggregations, and policy document searches function end-to-end without live GCP credentials by running the automated unit test suite:
+Where live GCP services are unavailable, run the isolated mock suite to test the entire pipeline offline:
 
-```bash
-python -m unittest tests/test_mock_pipeline.py
-```
+1. **Run Simulated Ingestion**:
+   ```bash
+   python mock/mock_ingestion.py
+   ```
+
+2. **Run Automated Offline Unit Tests**:
+   ```bash
+   python -m unittest tests/test_mock_pipeline.py
+   ```
 
 ---
 
@@ -323,27 +329,25 @@ python -m unittest tests/test_mock_pipeline.py
 ## 🎯 Key Design Decisions & Architecture
 
 1. **Strict Grounding & Anti-Hallucination**:
-   - The LLM instructions explicitly prohibit guessing or querying unverified sources.
-   - All sales analytics are routed to BigQuery Gold SQL aggregations (or validated local mock fact records).
+   - The LLM instructions explicitly prohibit reading raw CSVs or relying on generic knowledge for store metrics.
+   - All sales analytics are routed to BigQuery Gold SQL aggregations.
    - All policy answers are sourced directly from ingested documentation in `gold.product_documents`.
 2. **Medallion Data Architecture**:
-   - **Bronze**: Exact raw data ingestion from GCS.
+   - **Bronze**: Exact, untouched raw data ingestion from GCS.
    - **Silver**: Deduplicated, type-casted (`NUMERIC`, `DATE`, `INT64`), null-filtered data.
-   - **Gold**: High-performance Star Schema (`fact_sales`, `dim_product`, `dim_date`) optimized for analytical queries.
+   - **Gold**: High-performance Star Schema (`fact_sales`, `dim_product`, `dim_date`) optimized for analytical and agentic queries.
 3. **Relative 7-Day Window for Category Analytics**:
    - Rather than relying on today's system date (which would yield no results for historical static datasets), `get_recent_best_category` dynamically calculates `MAX(date_key)` from `fact_sales` and computes performance across `[MAX(date_key) - 7, MAX(date_key))`.
 4. **Multi-Format Document Extraction**:
    - `load_product_docs_to_bigquery.py` handles PDF, JSON, TXT, and CSV formats uniformly, producing clean, queryable text for semantic lookups.
-5. **Zero-Dependency Mock Fallback**:
-   - Ingestion scripts and agent query tools detect when live GCP credentials are unavailable and seamlessly switch to local parsing and analysis, ensuring the solution can be evaluated anywhere.
 
 ---
 
 ## ⚠️ Assumptions & Limitations
 
-- **Dataset Recency**: Historical batch sales data is used; real-time streaming ingestion (e.g. Pub/Sub to BigQuery) can be added for live transaction streams.
-- **Document Search**: Current document retrieval uses keyword pattern matching on BigQuery text columns; integration with Vertex AI Vector Search / Text Embeddings can be implemented for deeper semantic similarity at scale.
-- **Authentication**: Live execution requires standard Google Cloud Application Default Credentials and a valid Gemini API key. Mock execution requires only the Gemini API key.
+- **Dataset Recency**: Historical batch sales transactions are used; real-time streaming ingestion (e.g. Pub/Sub to BigQuery) can be added for live streaming scenarios.
+- **Document Search**: Current document retrieval uses keyword pattern matching on BigQuery text columns; integration with Vertex AI Vector Search / Text Embeddings can be implemented for deeper semantic semantic similarity at scale.
+- **Authentication**: Requires standard Google Cloud Application Default Credentials and a valid Gemini API key.
 
 ---
 
